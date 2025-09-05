@@ -357,7 +357,6 @@ class End2EndECGChatDataset(BaseECGDataset):
         try:
             instance = self.json_data_file[idx]
             np_path ="../../../william/ECG-Bench/ecg_bench/data/." + instance["ecg_path"]
-            print(np_path)
             ecg_path = self.train_utils.fm.open_npy(np_path)
             ecg_signal = ecg_path["ecg"]
             if self.args.perturb:
@@ -403,6 +402,32 @@ class End2EndECGChatDataset(BaseECGDataset):
 
         return torch.tensor(labels_list, dtype=torch.long)
     
+    def mask_first_lead_precomputed(self, input_ids: torch.Tensor, labels: torch.Tensor, ecg_signal,                      
+        tokenizer_utils, llm_tokenizer, signal_start: int, signal_len: int):
+
+        # convert ecg to symbol string
+        symbol_signal = tokenizer_utils._to_symbol_string(ecg_signal)  
+
+        # encode BPE merges
+        encoded_signal = tokenizer_utils.encode_symbol(symbol_signal, tokenizer_utils.merges)
+
+        # compute token-to-lead mapping
+        T = ecg_signal.shape[1]  # samples per lead
+        token_lead_map = []
+        char_idx = 0
+        for token_id in encoded_signal:
+
+            token_lead_map.append(char_idx // T) 
+            char_idx += 1 
+
+        # mask all tokens corresponding to first lead (lead index 0) in the signal window
+        labels_list = labels.tolist()
+        max_considered = min(signal_len, len(token_lead_map))
+        for i in range(max_considered):
+            if token_lead_map[i] == 0:  # first lead
+                labels_list[signal_start + i] = -100
+
+        return torch.tensor(labels_list, dtype=torch.long)
 
     def prepare_end2end_input(self, ecg_signal, altered_text):
         if self.args.train == "end2end" and self.args.inference is None:
@@ -415,7 +440,6 @@ class End2EndECGChatDataset(BaseECGDataset):
         conv = self.setup_conversation_template(signal=ecg_signal)
         altered_text = self.process_altered_text(altered_text)
         conv = self.append_messages_to_conv(conv, altered_text, ecg_signal)
-
         tokens_before, tokens_after = self.get_input_tokens(conv)
 
         symbol_signal = self.train_utils.ecg_tokenizer_utils._to_symbol_string(ecg_signal)
@@ -474,7 +498,7 @@ class End2EndECGChatDataset(BaseECGDataset):
         signal_len   = len(signal_tokens)
 
 
-        labels = self.mask_first_lead_postprocess(
+        labels = self.mask_first_lead_precomputed(
             input_ids=torch.tensor(input_ids, dtype=torch.long),
             labels=torch.tensor(labels, dtype=torch.long),
             ecg_signal=ecg_signal,
