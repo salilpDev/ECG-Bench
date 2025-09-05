@@ -383,28 +383,23 @@ class End2EndECGChatDataset(BaseECGDataset):
         signal_len: int                
     ):
  
-        # 1) Reconstruct the full symbol string the same way training does
-        full_sym = tokenizer_utils._to_symbol_string(ecg_signal)        # should be 12,T?
+        # reconstructs full symbol string 
+        full_sym = tokenizer_utils._to_symbol_string(ecg_signal)      
 
-        # 2) Track BPE encoding on the full string (returns tokens + per-token spans)
-        full_ids, segmap = tokenizer_utils.track_encoding(full_sym)     # segmap: list[(start, end)]
+        # track encoding on the full string (returns tokens + per-token spans), not efficient for large dataset
+        full_ids, segmap = tokenizer_utils.track_encoding(full_sym)  
 
-        # 3) Convert to the same 'signal_*' tokens your LLM sees
-        full_signal_tokens = llm_tokenizer.convert_tokens_to_ids([f"signal_{i}" for i in full_ids])
-
-        # first lead character span 
-        T = ecg_signal.shape[1]               # samples per lead; first lead occupies [0, T)
+        T = ecg_signal.shape[1]              
         first_lead_end = T
 
-        # mask each token in signal window 
         labels_list = labels.tolist()
-        max_considered = min(signal_len, len(segmap))  # don't go past what you actually kept
+        max_considered = min(signal_len, len(segmap))  
 
         for i in range(max_considered):
             start, end = segmap[i]  # token covers characters [start, end) in the original symbol string
 
             if start < first_lead_end:
-                labels_list[signal_start + i] = -100
+                labels_list[signal_start + i] = -100   # mask out lead 1
 
         return torch.tensor(labels_list, dtype=torch.long)
     
@@ -488,7 +483,6 @@ class End2EndECGChatDataset(BaseECGDataset):
             signal_start=signal_start,
             signal_len=signal_len,
         )
-        # <<< End addition >>>
 
 
         assert len(input_ids) == self.args.pad_to_max, f"Expected length {self.args.pad_to_max}, got {len(input_ids)}"
