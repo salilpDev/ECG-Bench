@@ -158,6 +158,7 @@ def run_train(model, train_loader, optimizer, args, viz):
     train_losses = []
     best_loss = float("inf")
 
+
     if args.checkpoint is not None:
         checkpoint = torch.load(f"{args.checkpoint}/best_model.pth", map_location=args.device)
         model.load_state_dict(checkpoint["model"])
@@ -165,7 +166,8 @@ def run_train(model, train_loader, optimizer, args, viz):
 
     for epoch in range(args.epochs):
         all_epochs.append(epoch)
-        train_dic = trainer(model, train_loader, optimizer, args, epoch)
+        train_dic = trainer(model, train_loader, optimizer, args, epoch) 
+        
         current_loss = train_dic["average_loss"]
         train_losses.append(current_loss)
 
@@ -321,13 +323,15 @@ def main(rank, world_size):
                 json_data_file=data,
                 train_utils=train_utils,
                 llm_tokenizer=tokenizer)
+            
+
+
 
         if args.train is not None:
             if args.dis:
                 sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, seed=args.seed, shuffle=True)
             else:
                 sampler = None
-
             data_loader = DataLoader(
                 dataset,
                 batch_size=args.batch_size,
@@ -336,8 +340,7 @@ def main(rank, world_size):
                 sampler=sampler,
                 pin_memory=True,
                 collate_fn=train_utils.collate_fn)
-
-            run_train(model, data_loader, optimizer, args, viz)
+            run_train(model, data_loader, optimizer, args, viz) 
 
         elif args.inference is not None:
             data_loader = DataLoader(
