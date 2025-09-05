@@ -230,7 +230,6 @@ class BaseECGDataset(Dataset):
 
         return labels
 
-
     def token_to_ids(self, labels):
         labels_np = np.array(labels)
         non_neg_indices = np.where(labels_np != -100)[0]
@@ -354,9 +353,11 @@ class FirstStageECGDataset(BaseECGDataset):
 
 class End2EndECGChatDataset(BaseECGDataset):
     def __getitem__(self, idx):
+        
         try:
             instance = self.json_data_file[idx]
-            np_path = instance["ecg_path"]
+            np_path ="../../../william/ECG-Bench/ecg_bench/data/." + instance["ecg_path"]
+            print(np_path)
             ecg_path = self.train_utils.fm.open_npy(np_path)
             ecg_signal = ecg_path["ecg"]
             if self.args.perturb:
@@ -369,11 +370,50 @@ class End2EndECGChatDataset(BaseECGDataset):
             print(e)
             print(f"Skipping invalid data at index {idx}")
             return None
+        
+
+    def mask_first_lead_postprocess(
+        self,
+        input_ids: torch.Tensor,
+        labels: torch.Tensor,
+        ecg_signal,                      
+        tokenizer_utils,                 
+        llm_tokenizer,                   
+        signal_start: int,           
+        signal_len: int                
+    ):
+ 
+        # 1) Reconstruct the full symbol string the same way training does
+        full_sym = tokenizer_utils._to_symbol_string(ecg_signal)        # should be 12,T?
+
+        # 2) Track BPE encoding on the full string (returns tokens + per-token spans)
+        full_ids, segmap = tokenizer_utils.track_encoding(full_sym)     # segmap: list[(start, end)]
+
+        # 3) Convert to the same 'signal_*' tokens your LLM sees
+        full_signal_tokens = llm_tokenizer.convert_tokens_to_ids([f"signal_{i}" for i in full_ids])
+
+        # first lead character span 
+        T = ecg_signal.shape[1]               # samples per lead; first lead occupies [0, T)
+        first_lead_end = T
+
+        # mask each token in signal window 
+        labels_list = labels.tolist()
+        max_considered = min(signal_len, len(segmap))  # don't go past what you actually kept
+
+        for i in range(max_considered):
+            start, end = segmap[i]  # token covers characters [start, end) in the original symbol string
+
+            if start < first_lead_end:
+                labels_list[signal_start + i] = -100
+
+        return torch.tensor(labels_list, dtype=torch.long)
+    
 
     def prepare_end2end_input(self, ecg_signal, altered_text):
         if self.args.train == "end2end" and self.args.inference is None:
             return self.prepare_training_end2end(ecg_signal, altered_text)
         if self.args.inference == "end2end" and self.args.train is None:
+            
             return self.prepare_inference_end2end(ecg_signal, altered_text)
 
     def prepare_training_end2end(self, ecg_signal, altered_text):
@@ -399,7 +439,7 @@ class End2EndECGChatDataset(BaseECGDataset):
         if total_used < self.args.pad_to_max and len(signal_tokens) < len(tokenized_signal):
             extra_signal = min(self.args.pad_to_max - total_used, len(tokenized_signal) - len(signal_tokens))
             signal_tokens = tokenized_signal[:len(signal_tokens) + extra_signal]
-
+        """"
         input_ids = tokens_before + signal_tokens + tokens_after
 
         if len(input_ids) < self.args.pad_to_max:
@@ -414,6 +454,46 @@ class End2EndECGChatDataset(BaseECGDataset):
         assert len(input_ids) == self.args.pad_to_max, f"Expected length {self.args.pad_to_max}, got {len(input_ids)}"
 
         labels = torch.tensor(labels, dtype=torch.int64)
+        position_ids = self.create_position_ids(input_ids)
+        attention_mask = self.create_attention_mask(input_ids)
+
+        return {
+            "input_ids": torch.tensor(input_ids, dtype=torch.int64),
+            "attn_mask": torch.tensor(attention_mask, dtype=torch.float32),
+            "labels": labels,
+            "position_ids": position_ids,
+            "signal": ecg_signal,
+        }
+        """
+        input_ids = tokens_before + signal_tokens + tokens_after
+
+        pad_len = 0
+        if len(input_ids) < self.args.pad_to_max:
+            pad_len = self.args.pad_to_max - len(input_ids)
+            input_ids = [self.llm_tokenizer.pad_token_id] * pad_len + input_ids
+
+        labels = self.create_labels_from_responses(input_ids, altered_text)
+
+
+        signal_start = pad_len + len(tokens_before)
+        signal_len   = len(signal_tokens)
+
+
+        labels = self.mask_first_lead_postprocess(
+            input_ids=torch.tensor(input_ids, dtype=torch.long),
+            labels=torch.tensor(labels, dtype=torch.long),
+            ecg_signal=ecg_signal,
+            tokenizer_utils=self.train_utils.ecg_tokenizer_utils,
+            llm_tokenizer=self.llm_tokenizer,
+            signal_start=signal_start,
+            signal_len=signal_len,
+        )
+        # <<< End addition >>>
+
+
+        assert len(input_ids) == self.args.pad_to_max, f"Expected length {self.args.pad_to_max}, got {len(input_ids)}"
+
+        labels = torch.tensor(labels, dtype=torch.int64) 
         position_ids = self.create_position_ids(input_ids)
         attention_mask = self.create_attention_mask(input_ids)
 
@@ -544,3 +624,8 @@ class SecondStageECGChatDataset(BaseECGDataset):
             "encoder_out": encoder_out,
             "signal_id_index": signal_id_index,
         }
+    
+
+
+    
+
