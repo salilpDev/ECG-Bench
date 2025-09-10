@@ -388,7 +388,7 @@ class End2EndECGChatDataset(BaseECGDataset):
         # track encoding on the full string (returns tokens + per-token spans), not efficient for large dataset
         full_ids, segmap = tokenizer_utils.track_encoding(full_sym)  
 
-        T = ecg_signal.shape[1]              
+        T = ecg_signal.shape[1]         
         first_lead_end = T
 
         labels_list = labels.tolist()
@@ -446,9 +446,14 @@ class End2EndECGChatDataset(BaseECGDataset):
         encoded_signal = self.train_utils.ecg_tokenizer_utils.encode_symbol(symbol_signal,
                                                                           self.train_utils.ecg_tokenizer_utils.merges)
         tokenized_signal = self.llm_tokenizer.convert_tokens_to_ids([f"signal_{ids}" for ids in encoded_signal])
+
+        input_ids = tokens_before + tokenized_signal + tokens_after
+        
+        '''
         signal_tokens = tokenized_signal[:min(500, len(tokenized_signal))] # keep at least 500, unless tokenized signal is shorter
         max_conv_tokens = self.args.pad_to_max - len(signal_tokens)
 
+        
         if len(tokens_before) + len(tokens_after) > max_conv_tokens:
             max_after = max(max_conv_tokens // 3, 1)
             tokens_after = tokens_after[:max_after]
@@ -458,15 +463,17 @@ class End2EndECGChatDataset(BaseECGDataset):
         if total_used < self.args.pad_to_max and len(signal_tokens) < len(tokenized_signal):
             extra_signal = min(self.args.pad_to_max - total_used, len(tokenized_signal) - len(signal_tokens))
             signal_tokens = tokenized_signal[:len(signal_tokens) + extra_signal]
-        """"
-        input_ids = tokens_before + signal_tokens + tokens_after
+        '''
+
+        # input_ids = tokens_before + signal_tokens + tokens_after
 
         if len(input_ids) < self.args.pad_to_max:
             padding_length = self.args.pad_to_max - len(input_ids)
             input_ids = [self.llm_tokenizer.pad_token_id] * padding_length + input_ids
 
-        labels = self.create_labels_from_responses(input_ids, altered_text)
+        #labels = self.create_labels_from_responses(input_ids, altered_text)
 
+        labels = [-100] + input_ids[1:]
         if self.args.dev:
             self.token_to_ids(labels)
 
@@ -483,46 +490,8 @@ class End2EndECGChatDataset(BaseECGDataset):
             "position_ids": position_ids,
             "signal": ecg_signal,
         }
-        """
-        input_ids = tokens_before + signal_tokens + tokens_after
-
-        pad_len = 0
-        if len(input_ids) < self.args.pad_to_max:
-            pad_len = self.args.pad_to_max - len(input_ids)
-            input_ids = [self.llm_tokenizer.pad_token_id] * pad_len + input_ids
-
-        labels = self.create_labels_from_responses(input_ids, altered_text)
-
-
-        signal_start = pad_len + len(tokens_before)
-        signal_len   = len(signal_tokens)
-
-
-        labels = self.mask_first_lead_precomputed(
-            input_ids=torch.tensor(input_ids, dtype=torch.long),
-            labels=torch.tensor(labels, dtype=torch.long),
-            ecg_signal=ecg_signal,
-            tokenizer_utils=self.train_utils.ecg_tokenizer_utils,
-            llm_tokenizer=self.llm_tokenizer,
-            signal_start=signal_start,
-            signal_len=signal_len,
-        )
-
-
-        assert len(input_ids) == self.args.pad_to_max, f"Expected length {self.args.pad_to_max}, got {len(input_ids)}"
-
-        labels = torch.tensor(labels, dtype=torch.int64) 
-        position_ids = self.create_position_ids(input_ids)
-        attention_mask = self.create_attention_mask(input_ids)
-
-        return {
-            "input_ids": torch.tensor(input_ids, dtype=torch.int64),
-            "attn_mask": torch.tensor(attention_mask, dtype=torch.float32),
-            "labels": labels,
-            "position_ids": position_ids,
-            "signal": ecg_signal,
-        }
-
+        
+        
     def prepare_inference_end2end(self, ecg_signal, altered_text):
         conv = self.setup_conversation_template(signal=ecg_signal)
         altered_text = self.process_altered_text(altered_text)
