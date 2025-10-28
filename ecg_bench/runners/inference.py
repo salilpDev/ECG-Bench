@@ -2,6 +2,28 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
+def compare_after_sequence(s1, s2, sequence):
+    # Find where the sequence appears in each string
+    i1 = s1.find(sequence)
+    i2 = s2.find(sequence)
+
+    # If the sequence isn't found in either string, stop early
+    if i1 == -1 or i2 == -1:
+        print("Sequence not found in one or both strings.")
+        return None
+
+    # Slice both strings starting from the found sequence
+    s1_sub = s1[i1:]
+    s2_sub = s2[i2:]
+
+    # Compare character by character
+    min_len = min(len(s1_sub), len(s2_sub))
+    matches = sum(c1 == c2 for c1, c2 in zip(s1_sub[:min_len], s2_sub[:min_len]))
+    accuracy = matches / max(len(s1_sub), len(s2_sub)) * 100
+    
+    return accuracy
+
+
 
 def tester_chat(model, dataloader, tokenizer, args, train_utils):
     model.eval()
@@ -9,6 +31,7 @@ def tester_chat(model, dataloader, tokenizer, args, train_utils):
     dev_count = 0
     gt_answers = []
     gen_answers = []
+    acc_dic = []
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(dataloader, desc=f"Testing {args.model}", position=0, leave=True)):
@@ -19,53 +42,21 @@ def tester_chat(model, dataloader, tokenizer, args, train_utils):
             try:
                 gt_input_ids = batch["input_ids"]
                 gt_attention_mask = batch["attn_mask"]
-                chat_input_ids = gt_input_ids.clone()
-                chat_attention_mask = gt_attention_mask.clone()
-                assistant_ranges = batch["assistant_ranges"]
-                if args.inference == "second":
-                    encoder_out = batch["encoder_out"]
-                    signal_id_index = batch["signal_id_index"].item()
-                offset = 0
-                for conv_turn in assistant_ranges:
-                    print("conv_turn", conv_turn)
-                    start = conv_turn["start"] + 4 + offset
-                    end = conv_turn["end"] + 1 + offset
-                    curr_input_ids = chat_input_ids[:, :start]
-                    curr_attention_mask = chat_attention_mask[:, :start]
-                    if args.dev:
-                        print("curr_input_ids", tokenizer.decode(curr_input_ids[0]))
-                        print("--------------------------------" * 3)
 
-                    if args.inference == "second":
-                        out = model.generate_chat(
-                            input_ids=curr_input_ids,
-                            attention_mask=curr_attention_mask,
-                            tokenizer=tokenizer,
-                            encoder_out=encoder_out,
-                            signal_id_index=signal_id_index)
-                    else:
-                        out = model.generate_chat(
-                            input_ids=curr_input_ids,
-                            attention_mask=curr_attention_mask,
-                            tokenizer=tokenizer)
+                # Generate full model output for the given input
+                out = model.generate_chat(
+                    input_ids=gt_input_ids,
+                    attention_mask=gt_attention_mask, 
+                    tokenizer=tokenizer,
+                )
 
-                    chat_input_ids = torch.cat([
-                        chat_input_ids[:, :start],
-                        out[:, start:].cpu(),
-                        gt_input_ids[:, end-offset:],
-                    ], dim=1)
-                    chat_attention_mask = torch.ones_like(chat_input_ids)
-                    decoded_out = tokenizer.batch_decode(out[:, start:], skip_special_tokens=False)[0]
-                    gt_out = tokenizer.batch_decode(gt_input_ids[:, start-offset:end-offset], skip_special_tokens=False)[0]
-                    gt_answers.append(gt_out)
-                    gen_answers.append(decoded_out)
-                    offset += out[:, start:].size(1) - (end - start)
-                    if args.dev:
-                        print("chat_input_ids", tokenizer.decode(chat_input_ids[0]))
-                        print("--------------------------------" * 3)
-                        print("decoded_out", decoded_out)
-                        print("gt_out", gt_out)
-                        print("--------------------------------" * 3)
+                decoded_out = tokenizer.batch_decode(out, skip_special_tokens=False)[0]
+                gt_out = tokenizer.batch_decode(gt_input_ids, skip_special_tokens=False)[0]
+
+                acc_dic.append(compare_after_sequence(decoded_out, gt_out, "user\n"))
+                gt_answers.append(gt_out)
+                gen_answers.append(decoded_out)
+                
             except Exception as e:
                 print("\nError occurred during evaluation:")
                 print(f"Error type: {type(e).__name__}")
@@ -84,14 +75,16 @@ def tester_chat(model, dataloader, tokenizer, args, train_utils):
                     break
 
     print("\nCalculating metrics...")
+
     try:
         all_metrics = train_utils.evaluate_strings(gt_answers, gen_answers, args.device)
+        
         print("\nMetrics calculated successfully:")
         print(f"BLEU: {all_metrics['BLEU']}")
         print(f"METEOR: {all_metrics['METEOR']}")
         print(f"ROUGE-L: {all_metrics['ROUGE']['rouge-l']}")
         print(f"BERTScore F1: {np.mean(all_metrics['BERTSCORE']['hf-f1'])}")
-        print(f"Accuracy: {all_metrics['ACC']}")
+        print(f"Accuracy: {sum(acc_dic)/len(acc_dic)}")
     except Exception as e:
         print("\nError during metric calculation:")
         print(f"Error type: {type(e).__name__}")
