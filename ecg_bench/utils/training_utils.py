@@ -37,8 +37,8 @@ class TrainingUtils:
 
     def save_config(self):
         args_dict = {k: v for k, v in vars(self.args).items() if not k.startswith("_")}
-        with open(f"{self.args.save_path}/config.yaml", "w") as f:
-            yaml.dump(args_dict, f, default_flow_style=False)
+        #with open(f"{self.args.save_path}/config.yaml", "w") as f:
+            #yaml.dump(args_dict, f, default_flow_style=False)
 
     def setup_wandb(self):
         """Initialize Weights & Biases logging if enabled"""

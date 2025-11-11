@@ -34,7 +34,7 @@ class qwen(nn.Module):
             out = self.llm.generate(
                 input_ids=input_ids.to(self.llm.device),
                 attention_mask=attention_mask.to(self.llm.device),
-                max_new_tokens=128,
+                max_new_tokens=1024,
                 pad_token_id=tokenizer.pad_token_id,
                 eos_token_id=tokenizer.convert_tokens_to_ids(["<|im_end|>"])[0],
                 use_cache=True,
