@@ -49,7 +49,7 @@ def tester_chat(model, dataloader, tokenizer, args, train_utils):
                     attention_mask=gt_attention_mask, 
                     tokenizer=tokenizer,
                 )
-
+                
                 decoded_out = tokenizer.batch_decode(out, skip_special_tokens=False)[0]
                 gt_out = tokenizer.batch_decode(gt_input_ids, skip_special_tokens=False)[0]
 
