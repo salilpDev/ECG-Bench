@@ -382,18 +382,18 @@ class End2EndECGChatDataset(BaseECGDataset):
             return self.prepare_inference_end2end(ecg_signal, altered_text)
 
     def prepare_training_end2end(self, ecg_signal, altered_text):
-        conv = self.setup_conversation_template(signal=ecg_signal)
-        altered_text = self.process_altered_text(altered_text)
-        conv = self.append_messages_to_conv(conv, altered_text, ecg_signal)
-        tokens_before, tokens_after = self.get_input_tokens(conv)
-
         symbol_signal = self.train_utils.ecg_tokenizer_utils._to_symbol_string(ecg_signal)
         encoded_signal = self.train_utils.ecg_tokenizer_utils.encode_symbol(symbol_signal,
                                                                           self.train_utils.ecg_tokenizer_utils.merges)
         tokenized_signal = self.llm_tokenizer.convert_tokens_to_ids([f"signal_{ids}" for ids in encoded_signal])
 
-        input_ids = tokens_before + tokenized_signal + tokens_after
+        bos_token = 151644
+        eos_token = 151645
+
+        input_ids = [bos_token] + tokenized_signal + [eos_token]
         
+       
+        # PADDING
         if len(input_ids) < self.args.pad_to_max:
             padding_length = self.args.pad_to_max - len(input_ids)
             input_ids = [self.llm_tokenizer.pad_token_id] * padding_length + input_ids
@@ -402,18 +402,15 @@ class End2EndECGChatDataset(BaseECGDataset):
         if len(input_ids) > self.args.pad_to_max:
             truncate_length = len(input_ids) - self.args.pad_to_max
             shortened_signal = tokenized_signal[:-(truncate_length)]
-            input_ids = tokens_before + shortened_signal + tokens_after
+            input_ids = [bos_token] + shortened_signal + [eos_token]
 
         labels = input_ids.copy()
         
-        labels[:len(tokens_before)] = [-100] * len(tokens_before)
-
-
         if self.args.dev:
             self.token_to_ids(labels)
 
         assert len(input_ids) == self.args.pad_to_max, f"Expected length {self.args.pad_to_max}, got {len(input_ids)}"
-
+  
         labels = torch.tensor(labels, dtype=torch.int64)
         attention_mask = self.create_attention_mask(input_ids)
 
@@ -424,27 +421,21 @@ class End2EndECGChatDataset(BaseECGDataset):
             "signal": ecg_signal,
         }
         
-        
     def prepare_inference_end2end(self, ecg_signal, altered_text):
-        conv = self.setup_conversation_template(signal=ecg_signal)
-        altered_text = self.process_altered_text(altered_text)
-        conv = self.append_messages_to_conv(conv, altered_text, ecg_signal)
-
-        tokens_before, tokens_after = self.get_input_tokens(conv)
-
         symbol_signal = self.train_utils.ecg_tokenizer_utils._to_symbol_string(ecg_signal)
         encoded_signal = self.train_utils.ecg_tokenizer_utils.encode_symbol(symbol_signal,
                                                                           self.train_utils.ecg_tokenizer_utils.merges)
         tokenized_signal = self.llm_tokenizer.convert_tokens_to_ids([f"signal_{ids}" for ids in encoded_signal])
 
-        input_ids = tokens_before + tokenized_signal[:512]
+        bos_token = 151644 
+
+        input_ids = bos_token + tokenized_signal[:512]
         attention_mask = self.create_attention_mask(input_ids)
 
         return {
             "input_ids": torch.tensor(input_ids, dtype=torch.int64),
             "attn_mask": torch.tensor(attention_mask, dtype=torch.float32),
         }
-
 
 class SecondStageECGChatDataset(BaseECGDataset):
     def __init__(self, *args, **kwargs):
