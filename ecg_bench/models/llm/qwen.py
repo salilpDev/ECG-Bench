@@ -17,7 +17,6 @@ class qwen(nn.Module):
             out = self.llm(input_ids = batch["input_ids"].to(self.llm.device),
                     attention_mask = batch["attn_mask"].to(self.llm.device),
                     labels = batch["labels"].to(self.llm.device),
-                    position_ids = batch["position_ids"].to(self.llm.device),
                     output_attentions = self.output_attentions, # this causes OOM during training so set it as False
                     )
         elif self.args.train == "second":
@@ -34,7 +33,7 @@ class qwen(nn.Module):
             out = self.llm.generate(
                 input_ids=input_ids.to(self.llm.device),
                 attention_mask=attention_mask.to(self.llm.device),
-                max_new_tokens=1024,
+                max_new_tokens=512,
                 pad_token_id=tokenizer.pad_token_id,
                 eos_token_id=tokenizer.convert_tokens_to_ids(["<|im_end|>"])[0],
                 use_cache=True,
