@@ -372,13 +372,10 @@ class End2EndECGChatDataset(BaseECGDataset):
             print(f"Skipping invalid data at index {idx}")
             return None
         
-
-
     def prepare_end2end_input(self, ecg_signal, altered_text):
         if self.args.train == "end2end" and self.args.inference is None:
             return self.prepare_training_end2end(ecg_signal, altered_text)
         if self.args.inference == "end2end" and self.args.train is None:
-            
             return self.prepare_inference_end2end(ecg_signal, altered_text)
 
     def prepare_training_end2end(self, ecg_signal, altered_text):
@@ -387,16 +384,15 @@ class End2EndECGChatDataset(BaseECGDataset):
                                                                           self.train_utils.ecg_tokenizer_utils.merges)
         tokenized_signal = self.llm_tokenizer.convert_tokens_to_ids([f"signal_{ids}" for ids in encoded_signal])
 
-        bos_token = 151644
-        eos_token = 151645
+        bos_token = 151644 # qwen BOS
+        eos_token = 151645 # qwen EOS
 
         input_ids = [bos_token] + tokenized_signal + [eos_token]
         
-       
         # PADDING
         if len(input_ids) < self.args.pad_to_max:
             padding_length = self.args.pad_to_max - len(input_ids)
-            input_ids = [self.llm_tokenizer.pad_token_id] * padding_length + input_ids
+            input_ids = [bos_token] + [self.llm_tokenizer.pad_token_id] * padding_length + tokenized_signal + [eos_token]
 
         
         if len(input_ids) > self.args.pad_to_max:
@@ -405,7 +401,9 @@ class End2EndECGChatDataset(BaseECGDataset):
             input_ids = [bos_token] + shortened_signal + [eos_token]
 
         labels = input_ids.copy()
-        
+
+        labels[0] = -100 
+
         if self.args.dev:
             self.token_to_ids(labels)
 
