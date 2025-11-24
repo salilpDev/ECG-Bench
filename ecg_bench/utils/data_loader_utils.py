@@ -392,9 +392,8 @@ class End2EndECGChatDataset(BaseECGDataset):
         # PADDING
         if len(input_ids) < self.args.pad_to_max:
             padding_length = self.args.pad_to_max - len(input_ids)
-            input_ids = [bos_token] + [self.llm_tokenizer.pad_token_id] * padding_length + tokenized_signal + [eos_token]
+            input_ids = [self.llm_tokenizer.pad_token_id] * padding_length + [bos_token] + tokenized_signal + [eos_token]
 
-        
         if len(input_ids) > self.args.pad_to_max:
             truncate_length = len(input_ids) - self.args.pad_to_max
             shortened_signal = tokenized_signal[:-(truncate_length)]
@@ -425,9 +424,9 @@ class End2EndECGChatDataset(BaseECGDataset):
                                                                           self.train_utils.ecg_tokenizer_utils.merges)
         tokenized_signal = self.llm_tokenizer.convert_tokens_to_ids([f"signal_{ids}" for ids in encoded_signal])
 
-        bos_token = 151644 
+        bos_token = 151644 #qwen BOS
 
-        input_ids = bos_token + tokenized_signal[:512]
+        input_ids = [bos_token] + tokenized_signal[:512]
         attention_mask = self.create_attention_mask(input_ids)
 
         return {
