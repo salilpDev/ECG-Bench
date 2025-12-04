@@ -388,20 +388,23 @@ class End2EndECGChatDataset(BaseECGDataset):
         eos_token = 151645 # qwen EOS
 
         input_ids = [bos_token] + tokenized_signal + [eos_token]
+        labels = []
         
         # PADDING
         if len(input_ids) < self.args.pad_to_max:
             padding_length = self.args.pad_to_max - len(input_ids)
             input_ids = [self.llm_tokenizer.pad_token_id] * padding_length + [bos_token] + tokenized_signal + [eos_token]
+            labels = [-100]*padding_length + [-100] + tokenized_signal + [eos_token]
 
-        if len(input_ids) > self.args.pad_to_max:
+        elif len(input_ids) > self.args.pad_to_max:
             truncate_length = len(input_ids) - self.args.pad_to_max
             shortened_signal = tokenized_signal[:-(truncate_length)]
             input_ids = [bos_token] + shortened_signal + [eos_token]
+            labels = [-100] + shortened_signal + [eos_token]
 
-        labels = input_ids.copy()
-
-        labels[0] = -100 
+        elif len(input_ids) == self.args.pad_to_max:
+            labels = input_ids.copy()
+            labels[0] = -100
 
         if self.args.dev:
             self.token_to_ids(labels)
@@ -432,6 +435,7 @@ class End2EndECGChatDataset(BaseECGDataset):
         return {
             "input_ids": torch.tensor(input_ids, dtype=torch.int64),
             "attn_mask": torch.tensor(attention_mask, dtype=torch.float32),
+            "gt_signal": torch.tensor(tokenized_signal[-512:], dtype=torch.int64)
         }
 
 class SecondStageECGChatDataset(BaseECGDataset):

@@ -40,20 +40,28 @@ def tester_chat(model, dataloader, tokenizer, args, train_utils):
                 continue
 
             try:
+                
                 gt_input_ids = batch["input_ids"]
                 gt_attention_mask = batch["attn_mask"]
-
+                gt_signal = batch["gt_signal"]
                 # Generate full model output for the given input
                 out = model.generate_chat(
                     input_ids=gt_input_ids,
                     attention_mask=gt_attention_mask, 
                     tokenizer=tokenizer,
                 )
-                
-                decoded_out = tokenizer.batch_decode(out, skip_special_tokens=False)[0]
-                gt_out = tokenizer.batch_decode(gt_input_ids, skip_special_tokens=False)[0]
+            
+                decoded_out = tokenizer.batch_decode(out[-512:], skip_special_tokens=False)[0]
 
-                acc_dic.append(compare_after_sequence(decoded_out, gt_out, "user\n"))
+                gt_out = tokenizer.batch_decode(gt_input_ids, skip_special_tokens=False)[0]
+                gt_signal_out = tokenizer.batch_decode(gt_signal, skip_special_tokens=False)[0]
+                
+                print(len(decoded_out))
+                print(len(gt_signal_out))
+
+
+                
+                
                 gt_answers.append(gt_out)
                 gen_answers.append(decoded_out)
                 
@@ -84,7 +92,7 @@ def tester_chat(model, dataloader, tokenizer, args, train_utils):
         print(f"METEOR: {all_metrics['METEOR']}")
         print(f"ROUGE-L: {all_metrics['ROUGE']['rouge-l']}")
         print(f"BERTScore F1: {np.mean(all_metrics['BERTSCORE']['hf-f1'])}")
-        print(f"Accuracy: {sum(acc_dic)/len(acc_dic)}")
+        print(f"Accuracy: {sum(acc_dic)/1}")
     except Exception as e:
         print("\nError during metric calculation:")
         print(f"Error type: {type(e).__name__}")
